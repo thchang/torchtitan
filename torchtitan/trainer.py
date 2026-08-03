@@ -56,6 +56,11 @@ from torchtitan.tools.logging import logger
 from torchtitan.tools.profiler import Profiler
 
 
+def _local_norm(tensors: list[torch.Tensor], norm_type: float = 2.0) -> torch.Tensor:
+    local = [t.to_local() if isinstance(t, DTensor) else t for t in tensors]
+    return torch.nn.utils.get_total_norm(local, norm_type, foreach=True)
+
+
 class Trainer(torch.distributed.checkpoint.stateful.Stateful, Configurable):
     @dataclass(kw_only=True, slots=True)
     class Config(Configurable.Config):
@@ -869,13 +874,27 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful, Configurable):
             "n_tokens_seen": global_ntokens_seen,
             **lr_metrics,
         }
+
+        grad_norm_val = float(grad_norm.item())
+
+        with torch.no_grad():
+            params = [p for m in self.model_parts for p in m.parameters()]
+            local_param_norm_val = _local_norm([p.detach() for p in params])
+            local_grad_norm_val = _local_norm([p.grad for p in params if p.grad is not None])
+
+        sl.log_trace_scalar({
+            "local_param_norm": local_param_norm_val,
+            "local_grad_norm": local_grad_norm_val,
+        })
+
         self.metrics_processor.log(
             self.step,
             global_avg_loss,
             global_max_loss,
-            float(grad_norm.item()),
+            grad_norm_val,
             extra_metrics=extra_metrics,
         )
+        sl.log_trace_scalar({"grad_norm": grad_norm_val})
 
     @record
     def train(self):
