@@ -30,6 +30,9 @@ export LOG_RANK=${LOG_RANK:-0}
 MODULE=${MODULE:-"llama3"}
 CONFIG=${CONFIG:-"llama3_debugmodel"}
 COMM_MODE=${COMM_MODE:-""}
+NNODES=${NNODES:-1}
+RDZV_ENDPOINT=${RDZV_ENDPOINT:-"localhost:0"}
+RDZV_ID=${RDZV_ID:-"torchtitan"}
 
 TORCHFT_LIGHTHOUSE=${TORCHFT_LIGHTHOUSE:-"http://localhost:29510"}
 
@@ -41,7 +44,8 @@ else
     # Normal training with torchrun
     PYTORCH_ALLOC_CONF="expandable_segments:True" \
     TORCHFT_LIGHTHOUSE=${TORCHFT_LIGHTHOUSE} \
-    torchrun --nproc_per_node=${NGPU} --rdzv_backend c10d --rdzv_endpoint="localhost:0" \
+    torchrun --nnodes=${NNODES} --nproc_per_node=${NGPU} --rdzv_backend c10d \
+    --rdzv_id=${RDZV_ID} --rdzv_endpoint="${RDZV_ENDPOINT}" \
     --local-ranks-filter ${LOG_RANK} --role rank --tee 3 \
     -m torchtitan.train --module ${MODULE} --config ${CONFIG} "$@"
 fi
